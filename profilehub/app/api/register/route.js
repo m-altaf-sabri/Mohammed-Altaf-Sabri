@@ -1,77 +1,98 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { connectDB } from "@/lib/db";
-import User from "@/models/user";
+import jwt from "jsonwebtoken";
+import { createUser } from "../../../lib/models/User";
 
 export async function POST(request) {
     try {
         const body = await request.json();
-        const { name, email, password } = body;
+
+        const name =
+            typeof body.name === "string" ? body.name.trim() : "";
+        const email =
+            typeof body.email === "string"
+                ? body.email.trim().toLowerCase()
+                : "";
+        const password =
+            typeof body.password === "string" ? body.password : "";
 
         if (!name || !email || !password) {
             return NextResponse.json(
-                {
-                    success: false,
-                    message: "All fields are required.",
-                },
+                { success: false, message: "Name, email, and password are required." },
                 { status: 400 }
             );
         }
 
-        if (password.length < 6) {
+        if (name.length > 100 || email.length > 254) {
             return NextResponse.json(
-                {
-                    success: false,
-                    message: "Password must be at least 6 characters.",
-                },
+                { success: false, message: "Name or email is too long." },
                 { status: 400 }
             );
         }
 
-        await connectDB();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return NextResponse.json(
+                { success: false, message: "Enter a valid email address." },
+                { status: 400 }
+            );
+        }
 
-        const existingUser = await User.findOne({
-            email: email.toLowerCase(),
+        if (password.length < 8 || password.length > 72) {
+            return NextResponse.json(
+                { success: false, message: "Password must be 8–72 characters long." },
+                { status: 400 }
+            );
+        }
+
+        if (!process.env.JWT_SECRET) {
+            return NextResponse.json(
+                { success: false, message: "Server configuration error." },
+                { status: 500 }
+            );
+        }
+
+        const passwordHash = await bcrypt.hash(password, 12);
+        const user = await createUser({ name, email, passwordHash });
+
+        const token = jwt.sign(
+            { id: user.id, name: user.name, email: user.email },
+            process.env.JWT_SECRET,
+            { expiresIn: "1d" }
+        );
+
+        const response = NextResponse.json(
+            {
+                success: true,
+                message: "Account created successfully.",
+                user,
+            },
+            { status: 201 }
+        );
+
+        response.cookies.set("profilehub_token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            path: "/",
+            maxAge: 60 * 60 * 24,
         });
 
-        if (existingUser) {
+        return response;
+    } catch (error) {
+        if (
+            error.message === "EMAIL_ALREADY_EXISTS" ||
+            error.code === 11000
+        ) {
             return NextResponse.json(
-                {
-                    success: false,
-                    message: "Email is already registered.",
-                },
+                { success: false, message: "An account with this email already exists." },
                 { status: 409 }
             );
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const user = await User.create({
-            name,
-            email: email.toLowerCase(),
-            password: hashedPassword,
-        });
+        console.error("Registration error:", error.message);
 
         return NextResponse.json(
-            {
-                success: true,
-                message: "Account created successfully.",
-                user: {
-                    id: user._id,
-                    name: user.name,
-                    email: user.email,
-                },
-            },
-            { status: 201 }
-        );
-    } catch (error) {
-        console.error("Register error details:", error);
-
-        return NextResponse.json(
-            {
-                success: false,
-                message: error.message || "Something went wrong.",
-            },
+            { success: false, message: "Unable to create account." },
             { status: 500 }
         );
     }

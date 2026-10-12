@@ -1,10 +1,25 @@
-export default function Home() {
+import { Suspense } from "react";
+import { connection } from "next/server";
+import { redirect } from "next/navigation";
+import { getLoggedInUser } from "../lib/auth";
+import DashboardContent from "../components/DashboardContent";
+
+async function DashboardData() {
+  await connection();
+
+  const user = await getLoggedInUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  return <DashboardContent user={user} />;
+}
+
+export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <h1 className="text-4xl font-bold">Welcome to ProfileHub</h1>
-      <p className="mt-4 text-lg text-gray-60">
-        Create and manage your professional profiles with ease.
-      </p>
-    </main>
+    <Suspense fallback={<div>Loading dashboard...</div>}>
+      <DashboardData />
+    </Suspense>
   );
 }

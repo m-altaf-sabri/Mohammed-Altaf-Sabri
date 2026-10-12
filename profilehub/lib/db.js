@@ -3,10 +3,15 @@ import mongoose from "mongoose";
 const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {
-    throw new Error("Please define the MONGODB_URI environment variable inside .env.local");
+    throw new Error(
+        "Please define MONGODB_URI inside .env.local"
+    );
 }
 
-let cached = global.mongoose || { conn: null, promise: null };
+let cached = global.mongoose || {
+    conn: null,
+    promise: null,
+};
 
 export async function connectDB() {
     if (cached.conn) {
@@ -14,22 +19,29 @@ export async function connectDB() {
     }
 
     if (!cached.promise) {
-        const opts = {
-            bufferCommands: false,
-        };
-
-        cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongooseInstance) => {
-            return mongooseInstance;
-        });
+        cached.promise = mongoose
+            .connect(MONGODB_URI, {
+                bufferCommands: false,
+                serverSelectionTimeoutMS: 10000,
+            })
+            .then((instance) => instance)
+            .catch((error) => {
+                console.error(
+                    "MongoDB connection failed:",
+                    error
+                );
+                cached.promise = null;
+                throw error;
+            });
     }
 
     try {
         cached.conn = await cached.promise;
-    } catch (e) {
+        global.mongoose = cached;
+        console.log("MongoDB connected successfully");
+        return cached.conn;
+    } catch (error) {
         cached.promise = null;
-        throw e;
+        throw error;
     }
-
-    global.mongoose = cached;
-    return cached.conn;
 }

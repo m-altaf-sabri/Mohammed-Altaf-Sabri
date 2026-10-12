@@ -1,58 +1,140 @@
+
 "use client";
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
 
 export default function LoginPage() {
+    const router = useRouter();
+
+    const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
-    const handleLogin = (e) => {
+    const handleLogin = async (e) => {
         e.preventDefault();
+        setError("");
 
-        if (!email || !password) {
-            alert("Please fill all fields.");
+        if (!name.trim() || !email.trim() || !password) {
+            setError("Please enter your name, email and password.");
             return;
         }
 
-        alert("Login successful!");
+        try {
+            setLoading(true);
+
+            const response = await fetch("/api/login", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    name: name.trim(),
+                    email: email.trim(),
+                    password,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                setError(data.message || "Login failed.");
+                return;
+            }
+
+            localStorage.setItem("profilehub_logged_in", "true");
+            localStorage.setItem("profilehub_user_name", name.trim());
+
+            router.push("/dashboard");
+            router.refresh();
+        } catch (error) {
+            console.error(error);
+            setError("Unable to connect to the server.");
+        } finally {
+            setLoading(false);
+        }
     };
 
+    const handleGoogleLogin = async () => {
+        setError("");
+        setLoading(true);
+
+        try {
+             await signIn("google", {
+                callbackUrl: "/dashboard",
+            });
+        } catch (error) {
+            console.error(error);
+            setError("Google login failed. Please try again.");
+        } finally {
+            setLoading(false);
+        }
+    };
     return (
         <main className="auth-page">
             <div className="auth-card">
                 <h1>Welcome Back</h1>
                 <p>Login to your ProfileHub account</p>
 
-                <form onSubmit={handleLogin}>
-                    <label>Email</label>
+                {error && (
+                    <div className="error-message">{error}</div>
+                )}
 
+                <form onSubmit={handleLogin} className="auth-form">
+                    <label htmlFor="name">Name</label>
                     <input
+                        id="name"
+                        type="text"
+                        placeholder="Enter your full name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        autoComplete="name"
+                        required
+                    />
+
+                    <label htmlFor="email">Email</label>
+                    <input
+                        id="email"
                         type="email"
                         placeholder="Enter your email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        autoComplete="email"
+                        required
                     />
 
-                    <label>Password</label>
-
+                    <label htmlFor="password">Password</label>
                     <input
+                        id="password"
                         type="password"
                         placeholder="Enter your password"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
+                        autoComplete="current-password"
+                        required
                     />
 
-                    <button type="submit">
-                        Login
+                    <button type="submit" disabled={loading}>
+                        {loading ? "Logging in..." : "Login"}
                     </button>
+                <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={loading}
+                    className="google-login-button"
+                >
+                    {loading ? "Please wait..." : "Continue with Google"}
+                </button>
                 </form>
+
 
                 <p className="auth-footer">
                     Don't have an account?{" "}
-                    <Link href="/register">
-                        Create Account
-                    </Link>
+                    <Link href="/register">Create Account</Link>
                 </p>
             </div>
         </main>

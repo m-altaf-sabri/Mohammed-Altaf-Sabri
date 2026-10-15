@@ -1,206 +1,195 @@
+
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getLoggedInUser } from "../../../../../../lib/auth";
 import { getUsersCollection } from "../../../../../../lib/models/User";
 
+function redirectToRoot(request, key, value) {
+  const destination = new URL("/", request.url);
+  destination.searchParams.set(key, value);
+  return NextResponse.redirect(destination);
+}
+
 export async function GET(request) {
-    const appUrl = new URL(request.url).origin;
-    const { searchParams } = new URL(request.url);
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const returnedError = url.searchParams.get("error");
+  const cookieState = request.cookies.get("github_link_state")?.value;
 
-    const code = searchParams.get("code");
-    const state = searchParams.get("state");
-    const returnedError = searchParams.get("error");
-    const savedState = request.cookies.get("github_link_state")?.value;
+  function clearStateCookie(response) {
+    response.cookies.set("github_link_state", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0,
+    });
+    return response;
+  }
 
-    const redirectWithError = (message) => {
-        const response = NextResponse.redirect(
-            new URL(
-                `/ dashboard ? github_link_error = ${ encodeURIComponent(message) } `,
-                appUrl
-            )
-        );
+  if (returnedError) {
+    return clearStateCookie(
+      redirectToRoot(request, "github_link_failed", "cancelled")
+    );
+  }
 
-        response.cookies.set("github_link_state", "", {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            path: "/",
-            maxAge: 0,
-        });
+  if (!code || !state || !cookieState || state !== cookieState) {
+    return clearStateCookie(
+      redirectToRoot(request, "github_link_failed", "state")
+    );
+  }
 
-        return response;
+  try {
+    const user = await getLoggedInUser();
+
+    if (!user?.id || !ObjectId.isValid(user.id)) {
+      return clearStateCookie(
+        NextResponse.redirect(new URL("/login", request.url))
+      );
+    }
+
+    const clientId = process.env.GITHUB_CLIENT_ID;
+    const clientSecret = process.env.GITHUB_CLIENT_SECRET;
+
+    if (!clientId || !clientSecret) {
+      return clearStateCookie(
+        redirectToRoot(request, "github_link_failed", "config")
+      );
+    }
+
+    const callbackUrl = new URL(
+      "/api/auth/github/link/callback",
+      request.url
+    ).toString();
+
+    const tokenResponse = await fetch(
+      "https://github.com/login/oauth/access_token",
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          code,
+          redirect_uri: callbackUrl,
+        }),
+        cache: "no-store",
+      }
+    );
+
+    const tokenData = await tokenResponse.json();
+
+    if (!tokenResponse.ok || !tokenData.access_token) {
+      console.error("GitHub token exchange failed:", {
+        httpStatus: tokenResponse.status,
+        error: tokenData.error ?? null,
+        description: tokenData.error_description ?? null,
+      });
+
+      throw new Error(tokenData.error || "GITHUB_ACCESS_TOKEN_MISSING");
+    }
+
+    const githubHeaders = {
+      Authorization: `Bearer ${tokenData.access_token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
     };
 
-    if (returnedError || !code || !state || !savedState) {
-        return redirectWithError("github_link_cancelled");
+    const profileResponse = await fetch("https://api.github.com/user", {
+      headers: githubHeaders,
+      cache: "no-store",
+    });
+
+    if (!profileResponse.ok) {
+      throw new Error("GITHUB_PROFILE_FETCH_FAILED");
     }
 
-    if (state !== savedState) {
-        return redirectWithError("invalid_oauth_state");
+    const githubProfile = await profileResponse.json();
+
+    if (
+      githubProfile.id == null ||
+      typeof githubProfile.login !== "string" ||
+      !githubProfile.login
+    ) {
+      throw new Error("GITHUB_PROFILE_INVALID");
     }
 
-    const {
-        GITHUB_CLIENT_ID,
-        GITHUB_CLIENT_SECRET,
-    } = process.env;
+    const emailResponse = await fetch("https://api.github.com/user/emails", {
+      headers: githubHeaders,
+      cache: "no-store",
+    });
 
-    if (!GITHUB_CLIENT_ID || !GITHUB_CLIENT_SECRET) {
-        return redirectWithError("server_configuration");
+    let githubEmail = null;
+
+    if (emailResponse.ok) {
+      const emails = await emailResponse.json();
+
+      const primaryVerified = Array.isArray(emails)
+        ? emails.find((email) => email.primary && email.verified)
+        : null;
+
+      githubEmail =
+        primaryVerified?.email?.trim().toLowerCase() ?? null;
     }
 
-    try {
-        // Confirm the user is still logged in.
-        const currentUser = await getLoggedInUser();
+    const users = await getUsersCollection();
+    const currentUserId = new ObjectId(user.id);
+    const githubId = String(githubProfile.id);
 
-        if (!currentUser?.id || !ObjectId.isValid(currentUser.id)) {
-            return redirectWithError("login_required");
-        }
+    const currentProfile = await users.findOne({
+      _id: currentUserId,
+    });
 
-        // Exchange the authorization code for a GitHub access token.
-        const tokenResponse = await fetch(
-            "https://github.com/login/oauth/access_token",
-            {
-                method: "POST",
-                headers: {
-                    Accept: "application/json",
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    client_id: GITHUB_CLIENT_ID,
-                    client_secret: GITHUB_CLIENT_SECRET,
-                    code,
-                }),
-                cache: "no-store",
-            }
-        );
-
-        if (!tokenResponse.ok) {
-            return redirectWithError("github_token_exchange_failed");
-        }
-
-        const tokenData = await tokenResponse.json();
-
-        if (tokenData.error || !tokenData.access_token) {
-            return redirectWithError("github_token_exchange_failed");
-        }
-
-        const githubHeaders = {
-            Authorization: `Bearer ${ tokenData.access_token } `,
-            Accept: "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        };
-
-        // Fetch the authenticated GitHub profile.
-        const profileResponse = await fetch(
-            "https://api.github.com/user",
-            {
-                headers: githubHeaders,
-                cache: "no-store",
-            }
-        );
-
-        if (!profileResponse.ok) {
-            return redirectWithError("github_profile_failed");
-        }
-
-        const githubProfile = await profileResponse.json();
-
-        if (!githubProfile.id) {
-            return redirectWithError("github_profile_failed");
-        }
-
-        // Fetch verified email when available.
-        let githubEmail = null;
-
-        const emailResponse = await fetch(
-            "https://api.github.com/user/emails",
-            {
-                headers: githubHeaders,
-                cache: "no-store",
-            }
-        );
-
-        if (emailResponse.ok) {
-            const emails = await emailResponse.json();
-
-            if (Array.isArray(emails)) {
-                const primaryVerifiedEmail = emails.find(
-                    (email) => email.primary && email.verified
-                );
-
-                const verifiedEmail = emails.find(
-                    (email) => email.verified
-                );
-
-                githubEmail =
-                    primaryVerifiedEmail?.email ||
-                    verifiedEmail?.email ||
-                    null;
-            }
-        }
-
-        const users = await getUsersCollection();
-        const profileHubUserId = new ObjectId(currentUser.id);
-
-        const profileHubUser = await users.findOne({
-            _id: profileHubUserId,
-        });
-
-        if (!profileHubUser) {
-            return redirectWithError("profilehub_user_not_found");
-        }
-
-        const githubId = String(githubProfile.id);
-
-        // Prevent linking a GitHub account already owned by another user.
-        const existingOwner = await users.findOne({
-            githubId,
-        });
-
-        if (
-            existingOwner &&
-            existingOwner._id.toString() !== currentUser.id
-        ) {
-            return redirectWithError("github_account_already_linked");
-        }
-
-        // Prevent replacing a different GitHub account already linked here.
-        if (
-            profileHubUser.githubId &&
-            String(profileHubUser.githubId) !== githubId
-        ) {
-            return redirectWithError("another_github_account_linked");
-        }
-
-        await users.updateOne(
-            { _id: profileHubUserId },
-            {
-                $set: {
-                    githubId,
-                    githubUsername: githubProfile.login || null,
-                    githubName: githubProfile.name || null,
-                    githubEmail,
-                    githubProfileUrl: githubProfile.html_url || null,
-                    githubLinkedAt: new Date(),
-                },
-            }
-        );
-
-        const response = NextResponse.redirect(
-            new URL("/dashboard?github_linked=success", appUrl)
-        );
-
-        response.cookies.set("github_link_state", "", {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
-            path: "/",
-            maxAge: 0,
-        });
-
-        return response;
-    } catch (error) {
-        console.error("GitHub account linking failed:", error);
-        return redirectWithError("github_link_failed");
+    if (!currentProfile) {
+      throw new Error("PROFILE_USER_NOT_FOUND");
     }
+
+    const existingLink = await users.findOne({
+      githubId,
+      _id: { $ne: currentUserId },
+    });
+
+    if (existingLink) {
+      return clearStateCookie(
+        redirectToRoot(request, "github_link_failed", "already_linked")
+      );
+    }
+
+    if (
+      currentProfile.githubId &&
+      String(currentProfile.githubId) !== githubId
+    ) {
+      return clearStateCookie(
+        redirectToRoot(request, "github_link_failed", "account_conflict")
+      );
+    }
+
+    const fieldsToSave = {
+      githubId,
+      githubUsername: githubProfile.login,
+    };
+
+    if (githubEmail) {
+      fieldsToSave.githubEmail = githubEmail;
+    }
+
+    await users.updateOne(
+      { _id: currentUserId },
+      { $set: fieldsToSave }
+    );
+
+    return clearStateCookie(
+      redirectToRoot(request, "github_linked", "success")
+    );
+  } catch (error) {
+    console.error("GitHub account linking failed:", error.message);
+
+    return clearStateCookie(
+      redirectToRoot(request, "github_link_failed", "1")
+    );
+  }
 }

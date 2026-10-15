@@ -1,28 +1,36 @@
-
 import { MongoClient } from "mongodb";
 
 const uri = process.env.MONGODB_URI;
 
 if (!uri) {
-    throw new Error("Please define MONGODB_URI in .env.local");
+  throw new Error(
+    "Please define MONGODB_URI in your .env.local file"
+  );
 }
 
 const options = {
-    serverSelectionTimeoutMS: 10000,
+  serverSelectionTimeoutMS: 15000,
+  connectTimeoutMS: 15000,
 };
+
+const globalForMongo = globalThis;
 
 let clientPromise;
 
 if (process.env.NODE_ENV === "development") {
-    if (!global._mongoClientPromise) {
-        const client = new MongoClient(uri, options);
-        global._mongoClientPromise = client.connect();
-    }
-
-    clientPromise = global._mongoClientPromise;
-} else {
+  if (!globalForMongo._mongoClientPromise) {
     const client = new MongoClient(uri, options);
-    clientPromise = client.connect();
+
+    globalForMongo._mongoClientPromise = client.connect().catch((error) => {
+      globalForMongo._mongoClientPromise = undefined;
+      throw error;
+    });
+  }
+
+  clientPromise = globalForMongo._mongoClientPromise;
+} else {
+  const client = new MongoClient(uri, options);
+  clientPromise = client.connect();
 }
 
 export default clientPromise;

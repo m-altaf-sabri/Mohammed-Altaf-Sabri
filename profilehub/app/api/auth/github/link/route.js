@@ -1,51 +1,49 @@
+
 import { NextResponse } from "next/server";
-import { randomBytes } from "crypto";
+import { randomBytes } from "node:crypto";
 import { getLoggedInUser } from "../../../../../lib/auth";
 
 export async function GET(request) {
-    const user = await getLoggedInUser();
+  const user = await getLoggedInUser();
 
-    if (!user?.id) {
-        return NextResponse.redirect(
-            new URL("/login?error=login_required", request.url)
-        );
-    }
+  if (!user) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
 
-    const {
-        GITHUB_CLIENT_ID,
-        GITHUB_REDIRECT_URI,
-    } = process.env;
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  const clientSecret = process.env.GITHUB_CLIENT_SECRET;
 
-    if (!GITHUB_CLIENT_ID || !GITHUB_REDIRECT_URI) {
-        return NextResponse.json(
-            {
-                success: false,
-                message: "GitHub OAuth is not configured.",
-            },
-            { status: 500 }
-        );
-    }
-
-    const state = randomBytes(32).toString("hex");
-
-    const authorizationUrl = new URL(
-        "https://github.com/login/oauth/authorize"
+  if (!clientId || !clientSecret) {
+    return NextResponse.redirect(
+      new URL("/?github_link_failed=config", request.url)
     );
+  }
 
-    authorizationUrl.searchParams.set("client_id", GITHUB_CLIENT_ID);
-    authorizationUrl.searchParams.set("redirect_uri", GITHUB_REDIRECT_URI);
-    authorizationUrl.searchParams.set("scope", "read:user user:email");
-    authorizationUrl.searchParams.set("state", state);
+  const state = randomBytes(32).toString("hex");
 
-    const response = NextResponse.redirect(authorizationUrl);
+  const callbackUrl = new URL(
+    "/api/auth/github/link/callback",
+    request.url
+  ).toString();
 
-    response.cookies.set("github_link_state", state, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: 600,
-    });
+  const authorizeUrl = new URL(
+    "https://github.com/login/oauth/authorize"
+  );
 
-    return response;
+  authorizeUrl.searchParams.set("client_id", clientId);
+  authorizeUrl.searchParams.set("redirect_uri", callbackUrl);
+  authorizeUrl.searchParams.set("scope", "read:user user:email");
+  authorizeUrl.searchParams.set("state", state);
+
+  const response = NextResponse.redirect(authorizeUrl);
+
+  response.cookies.set("github_link_state", state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 600,
+  });
+
+  return response;
 }

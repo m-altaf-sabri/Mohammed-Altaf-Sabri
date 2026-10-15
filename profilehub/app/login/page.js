@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -49,7 +48,7 @@ export default function LoginPage() {
             localStorage.setItem("profilehub_logged_in", "true");
             localStorage.setItem("profilehub_user_name", name.trim());
 
-            router.push("/dashboard");
+            router.push("/");
             router.refresh();
         } catch (error) {
             console.error(error);
@@ -64,7 +63,7 @@ export default function LoginPage() {
         setLoading(true);
 
         try {
-             await signIn("google", {
+            await signIn("google", {
                 callbackUrl: "/dashboard",
             });
         } catch (error) {
@@ -121,14 +120,14 @@ export default function LoginPage() {
                     <button type="submit" disabled={loading}>
                         {loading ? "Logging in..." : "Login"}
                     </button>
-                <button
-                    type="button"
-                    onClick={handleGoogleLogin}
-                    disabled={loading}
-                    className="google-login-button"
-                >
-                    {loading ? "Please wait..." : "Continue with Google"}
-                </button>
+                    <button
+                        type="button"
+                        onClick={handleGoogleLogin}
+                        disabled={loading}
+                        className="google-login-button"
+                    >
+                        {loading ? "Please wait..." : "Continue with Google"}
+                    </button>
                 </form>
 
 

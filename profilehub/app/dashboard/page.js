@@ -1,26 +1,29 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
-import { redirect } from "next/navigation";
-import { getLoggedInUser } from "../../lib/auth";
-import DashboardContent from "../../components/DashboardContent";
+import { getLoggedInUser } from "@/lib/auth";
 
-async function DashboardData() {
-    // Tell Next.js to render this part at request time.
+async function DashboardContent() {
     await connection();
 
     const user = await getLoggedInUser();
 
     if (!user) {
-        redirect("/login");
+        return <p>Please log in to continue.</p>;
     }
 
-    return <DashboardContent user={user} />;
+    return (
+        <main>
+            <h1>Welcome to ProfileHub</h1>
+            <p>Hello, {user.name || user.email}!</p>
+            <p>You are successfully logged in.</p>
+        </main>
+    );
 }
 
 export default function DashboardPage() {
     return (
-        <Suspense fallback={<div>Loading dashboard...</div>}>
-            <DashboardData />
+        <Suspense fallback={<p>Loading your dashboard...</p>}>
+            <DashboardContent />
         </Suspense>
     );
 }

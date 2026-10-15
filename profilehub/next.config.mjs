@@ -1,16 +1,12 @@
 /** @type {import('next').NextConfig} */
-import path from "path";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-
+const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig = {
-turbopack:{ root: path.resolve(".")},
-
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
-  reactCompiler: true,
   turbopack: {
+    root: projectRoot,
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
@@ -18,6 +14,10 @@ turbopack:{ root: path.resolve(".")},
       },
     },
   },
+
+  cacheComponents: true,
+  partialPrefetching: true,
+  reactCompiler: true,
 };
 
 export default nextConfig;

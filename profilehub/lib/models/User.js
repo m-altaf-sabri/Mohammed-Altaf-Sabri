@@ -2,6 +2,7 @@ import clientpromise from "../mongodb";
 
 export async function getUsersCollection() {
     const client = await clientpromise;
+    
     const db = client.db("profilehub");
 
     return db.collection("users");

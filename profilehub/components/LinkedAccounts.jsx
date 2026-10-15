@@ -1,220 +1,228 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
 
-const PLATFORMS = [
-    "LinkedIn",
-    "GitHub",
-    "Instagram",
-    "Facebook",
-    "X",
-    "YouTube",
+
+
+const STORAGE_KEY = "profilehub_public_links";
+
+const emptyLink = {
+    title: "",
+    url: "",
+    platform: "Website",
+};
+
+const platforms = [
     "Website",
+    "Google",
+    "GitHub",
+    "LinkedIn",
+    "Instagram",
+    "YouTube",
+    "Other",
 ];
 
-export default function LinkedAccounts() {
-    const [accounts, setAccounts] = useState([]);
-    const [platform, setPlatform] = useState("LinkedIn");
-    const [url, setUrl] = useState("");
-    const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState(false);
-    const [removingId, setRemovingId] = useState("");
-    const [error, setError] = useState("");
-    const [message, setMessage] = useState("");
+function normalizeUrl(value) {
+    const trimmed = value.trim();
 
-    async function loadAccounts() {
-        setError("");
+    if (!trimmed) return null;
 
-        try {
-            const response = await fetch("/api/linked-accounts");
-            const data = await response.json();
+    try {
+        const url = new URL(
+            /^https?:\/\//i.test(trimmed)
+                ? trimmed
+                : `https://${trimmed}`
+        );
 
-            if (!response.ok) {
-                setError(data.message || "Could not load accounts.");
-                return;
-            }
-
-            setAccounts(data.accounts || []);
-        } catch {
-            setError("Unable to connect to the server.");
-        } finally {
-            setLoading(false);
+        if (!["http:", "https:"].includes(url.protocol)) {
+            return null;
         }
+
+        return url.href;
+    } catch {
+        return null;
     }
+}
+
+export default function LinkedAccounts() {
+    const [links, setLinks] = useState([]);
+    const [form, setForm] = useState(emptyLink);
+    const [message, setMessage] = useState("");
+    const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
-        loadAccounts();
+        try {
+            const stored = localStorage.getItem(STORAGE_KEY);
+
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (Array.isArray(parsed)) setLinks(parsed);
+            }
+        } catch {
+            setMessage("Unable to load saved profile links.");
+        } finally {
+            setLoaded(true);
+        }
     }, []);
 
-    async function handleAdd(event) {
+    useEffect(() => {
+        if (!loaded) return;
+
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(links));
+        } catch {
+            setMessage("Unable to save links in this browser.");
+        }
+    }, [links, loaded]);
+
+    function handleSubmit(event) {
         event.preventDefault();
-        setError("");
         setMessage("");
 
-        const cleanUrl = url.trim();
+        const title = form.title.trim();
+        const url = normalizeUrl(form.url);
 
-        if (!cleanUrl) {
-            setError("Enter your profile URL.");
+        if (!title || !url) {
+            setMessage("Enter a title and a valid website URL.");
             return;
         }
 
-        setSaving(true);
+        setLinks((current) => [
+            ...current,
+            {
+                id: crypto.randomUUID(),
+                title,
+                url,
+                platform: form.platform,
+            },
+        ]);
 
-        try {
-            const response = await fetch("/api/linked-accounts", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ platform, url: cleanUrl }),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                setError(data.message || "Could not add this link.");
-                return;
-            }
-
-            setAccounts((current) => [...current, data.account]);
-            setUrl("");
-            setMessage("Account link added successfully.");
-        } catch {
-            setError("Unable to connect to the server.");
-        } finally {
-            setSaving(false);
-        }
+        setForm(emptyLink);
+        setMessage("Profile link added successfully.");
     }
 
-    async function handleRemove(id) {
-        setError("");
-        setMessage("");
-        setRemovingId(id);
-
-        try {
-            const response = await fetch("/api/linked-accounts", {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id }),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                setError(data.message || "Could not remove this link.");
-                return;
-            }
-
-            setAccounts((current) =>
-                current.filter((account) => account.id !== id)
-            );
-            setMessage("Account link removed.");
-        } catch {
-            setError("Unable to connect to the server.");
-        } finally {
-            setRemovingId("");
-        }
+    function removeLink(id) {
+        setLinks((current) => current.filter((link) => link.id !== id));
+        setMessage("Profile link removed.");
     }
 
     return (
         <section className="linked-accounts">
             <div className="linked-accounts-heading">
                 <div>
-                    <p className="linked-accounts-eyebrow">YOUR CONNECTIONS</p>
-                    <h2>Linked accounts</h2>
-                    <p className="linked-accounts-description">
-                        Keep your social profiles and website links together.
+                    <span className="hub-kicker">YOUR PROFILE LINKS</span>
+                    <h3>Manage your links</h3>
+                    <p>
+                        Add public profiles and websites to keep everything
+                        organized in one place.
                     </p>
                 </div>
-                <span className="linked-accounts-count">
-                    {accounts.length} / 20
+
+                <span className="linked-count">
+                    {links.length} {links.length === 1 ? "link" : "links"}
                 </span>
             </div>
 
+            <form className="linked-account-form" onSubmit={handleSubmit}>
+                <label>
+                    Link title
+                    <input
+                        type="text"
+                        value={form.title}
+                        onChange={(event) =>
+                            setForm({ ...form, title: event.target.value })
+                        }
+                        placeholder="My portfolio"
+                        maxLength={80}
+                        required
+                    />
+                </label>
+
+                <label>
+                    Platform
+                    <select
+                        value={form.platform}
+                        onChange={(event) =>
+                            setForm({ ...form, platform: event.target.value })
+                        }
+                    >
+                        {platforms.map((platform) => (
+                            <option key={platform} value={platform}>
+                                {platform}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+
+                <label className="linked-url-field">
+                    Profile URL
+                    <input
+                        type="text"
+                        value={form.url}
+                        onChange={(event) =>
+                            setForm({ ...form, url: event.target.value })
+                        }
+                        placeholder="https://example.com/my-profile"
+                        maxLength={2048}
+                        required
+                    />
+                </label>
+
+                <button className="linked-add-button" type="submit">
+                    Add link <span aria-hidden="true">+</span>
+                </button>
+            </form>
+
             {message && (
-                <p className="linked-accounts-success" role="status">
+                <p className="hub-notice" role="status">
                     {message}
                 </p>
             )}
 
-            {error && (
-                <p className="linked-accounts-error" role="alert">
-                    {error}
-                </p>
-            )}
-
-            <form className="linked-accounts-form" onSubmit={handleAdd}>
-                <label htmlFor="linked-platform">Platform</label>
-                <select
-                    id="linked-platform"
-                    value={platform}
-                    onChange={(event) => setPlatform(event.target.value)}
-                >
-                    {PLATFORMS.map((item) => (
-                        <option key={item} value={item}>
-                            {item}
-                        </option>
-                    ))}
-                </select>
-
-                <label htmlFor="linked-url">Profile URL</label>
-                <input
-                    id="linked-url"
-                    type="url"
-                    placeholder="https://github.com/yourusername"
-                    value={url}
-                    onChange={(event) => setUrl(event.target.value)}
-                    maxLength={2048}
-                    required
-                />
-
-                <button
-                    className="linked-accounts-add"
-                    type="submit"
-                    disabled={saving || accounts.length >= 20}
-                >
-                    {saving ? "Adding..." : "Add account"}
-                </button>
-            </form>
-
             <div className="linked-accounts-list">
-                <h3>Your saved links</h3>
-
-                {loading ? (
-                    <p>Loading your links...</p>
-                ) : accounts.length === 0 ? (
-                    <p className="linked-accounts-empty">
-                        No links yet. Add your first social profile above.
-                    </p>
+                {links.length === 0 ? (
+                    <div className="linked-empty">
+                        <span aria-hidden="true">↗</span>
+                        <h4>No profile links yet</h4>
+                        <p>Add your first public profile or website above.</p>
+                    </div>
                 ) : (
-                    accounts.map((account) => (
-                        <article
-                            className="linked-account-item"
-                            key={account.id}
-                        >
-                            <div className="linked-account-info">
-                                <span className="linked-account-platform">
-                                    {account.platform}
-                                </span>
+                    links.map((link) => (
+                        <article className="linked-account-item" key={link.id}>
+                            <div className="linked-item-icon" aria-hidden="true">
+                                ↗
+                            </div>
+
+                            <div className="linked-item-details">
+                                <h4>{link.title}</h4>
+                                <span>{link.platform}</span>
                                 <a
-                                    href={account.url}
+                                    href={link.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                 >
-                                    {account.url}
+                                    {link.url}
                                 </a>
                             </div>
 
-                            <button
-                                className="linked-account-remove"
-                                type="button"
-                                disabled={removingId === account.id}
-                                onClick={() => handleRemove(account.id)}
-                                aria-label={`Remove ${account.platform} link`}
-                            >
-                                {removingId === account.id
-                                    ? "Removing..."
-                                    : "Remove"}
-                            </button>
+                            <div className="linked-item-actions">
+                                <a
+                                    href={link.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    aria-label={`Open ${link.title} in a new tab`}
+                                >
+                                    Open
+                                </a>
+
+                                <button
+                                    type="button"
+                                    onClick={() => removeLink(link.id)}
+                                    aria-label={`Remove ${link.title}`}
+                                >
+                                    Remove
+                                </button>
+                            </div>
                         </article>
                     ))
                 )}

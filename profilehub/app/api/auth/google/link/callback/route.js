@@ -18,7 +18,7 @@ export async function GET(request) {
     const redirectWithError = (message) => {
         const response = NextResponse.redirect(
             new URL(
-                `/dashboard?google_link_error=${encodeURIComponent(message)}`,
+                `/?google_link_error=${encodeURIComponent(message)}`,
                 appUrl
             )
         );
@@ -149,7 +149,7 @@ export async function GET(request) {
         );
 
         const response = NextResponse.redirect(
-            new URL("/dashboard?google_linked=success", appUrl)
+            new URL("/?google_linked=success", appUrl)
         );
 
         response.cookies.set("google_link_state", "", {

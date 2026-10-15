@@ -17,6 +17,7 @@ async function DashboardData() {
 }
 
 export default function HomePage() {
+
   return (
     <Suspense fallback={<div>Loading dashboard...</div>}>
       <DashboardData />

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-// import LinkedAccounts from "./LinkedAccounts";
+import { useEffect, useState } from "react";
+import LinkedAccounts from "./LinkedAccounts";
 
 const accounts = [
     {
@@ -25,7 +25,50 @@ const accounts = [
 ];
 
 export default function DashboardContent({ user }) {
+
     const [message, setMessage] = useState("");
+
+    const [accountStatus, setAccountStatus] = useState({
+        google: { connected: false, id: null, email: null },
+        github: { connected: false, id: null, username: null },
+        linkedin: { connected: false, id: null, name: null },
+    });
+
+    const [statusLoading, setStatusLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        async function loadAccountStatus() {
+            try {
+                const response = await fetch("/api/linked-accounts/status", {
+                    cache: "no-store",
+                });
+
+                if (!response.ok) {
+                    throw new Error("Could not load account status");
+                }
+
+                const data = await response.json();
+
+                if (!cancelled) {
+                    setAccountStatus(data);
+                }
+            } catch (error) {
+                console.error("Unable to load linked account status:", error);
+            } finally {
+                if (!cancelled) {
+                    setStatusLoading(false);
+                }
+            }
+        }
+
+        loadAccountStatus();
+
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     const name = user?.name?.trim() || "User";
     const initial = name.charAt(0).toUpperCase();
@@ -90,45 +133,105 @@ export default function DashboardContent({ user }) {
                     </div>
 
                     <div className="hub-account-grid">
-                        {accounts.map((account) => (
-                            <article
-                                className="hub-account-card"
-                                key={account.name}
-                            >
-                                <div className="hub-card-top">
-                                    <div
-                                        className={`hub-service-icon ${account.className}`}
-                                    >
-                                        {account.icon}
-                                    </div>
-                                    <span className="hub-planned">
-                                        Not connected
-                                    </span>
-                                </div>
+                        {accounts.map((account) => {
+                            const key = account.name.toLowerCase();
+                            const status = accountStatus[key];
+                            const connected = Boolean(status?.connected);
 
-                                <h3>{account.name}</h3>
-                                <p>{account.description}</p>
+                            const accountDetail =
+                                key === "google"
+                                    ? status?.email
+                                    : key === "github"
+                                        ? status?.username
+                                        : status?.name;
 
-                                <button
-                                    type="button"
-                                    className="hub-card-button"
+                            const accountId = status?.id;
 
-                                    onClick={() => {
-                                        if (account.name === "Google") {
-                                            window.location.href = "/api/auth/google/link";
-                                            return;
-                                        }
-
-                                        setMessage(
-                                            `${account.name} account linking is not configured yet.`
-                                        );
-                                    }}
-
+                            return (
+                                <article
+                                    className="hub-account-card"
+                                    key={account.name}
                                 >
-                                    Connect account <span>→</span>
-                                </button>
-                            </article>
-                        ))}
+                                    <div className="hub-card-top">
+                                        <div
+                                            className={`hub-service-icon ${account.className}`}
+                                        >
+                                            {account.icon}
+                                        </div>
+
+                                        <span
+                                            className={
+                                                connected
+                                                    ? "hub-planned hub-connected"
+                                                    : "hub-planned"
+                                            }
+                                        >
+                                            {statusLoading
+                                                ? "Checking..."
+                                                : connected
+                                                    ? "Connected"
+                                                    : "Not connected"}
+                                        </span>
+                                    </div>
+
+                                    <h3>{account.name}</h3>
+                                    <p>{account.description}</p>
+
+                                    {connected && (
+                                        <div className="hub-connected-details">
+                                            {accountDetail && (
+                                                <p>
+                                                    <strong>Account:</strong>{" "}
+                                                    {accountDetail}
+                                                </p>
+                                            )}
+
+                                            {accountId && (
+                                                <p>
+                                                    <strong>ID:</strong>{" "}
+                                                    <span className="hub-account-id">
+                                                        {accountId}
+                                                    </span>
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        className="hub-card-button"
+                                        disabled={statusLoading}
+                                      
+onClick={() => {
+  setMessage("");
+
+  if (connected) {
+    setMessage(`${account.name} is already connected.`);
+    return;
+  }
+
+  if (account.name === "Google") {
+    window.location.href = "/api/auth/google/link";
+    return;
+  }
+
+  if (account.name === "GitHub") {
+    window.location.href = "/api/auth/github/link";
+    return;
+  }
+
+  setMessage(
+    `${account.name} account linking is not configured yet.`
+  );
+}}
+
+                                    >
+                                        {connected ? "Connected ✓" : "Connect account"}
+                                        <span>→</span>
+                                    </button>
+                                </article>
+                            );
+                        })}
                     </div>
 
                     {message && (
@@ -159,13 +262,19 @@ export default function DashboardContent({ user }) {
                             ↗
                         </div>
                     </div>
+                    <LinkedAccounts />
                 </section>
 
                 <footer className="hub-footer">
                     <span>© {new Date().getFullYear()} ProfileHub</span>
                     <span>One profile. All your links.</span>
                 </footer>
-            </div>
-        </main>
+            </div >
+        </main >
     );
 }
+
+
+
+
+

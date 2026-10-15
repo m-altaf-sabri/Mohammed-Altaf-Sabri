@@ -37,11 +37,8 @@ export default function Navbar() {
 
     return (
         <nav className="navbar">
-            <a className="hub-logo" href="/dashboard">
-                <span className="hub-logo-mark">P</span>
-            </a>
             <Link href="/" className="logo">
-                ProfileHub<span>.</span>
+                MAS<span>.</span>
             </Link>
 
             <button

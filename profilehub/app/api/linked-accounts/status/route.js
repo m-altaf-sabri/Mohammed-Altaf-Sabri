@@ -1,3 +1,4 @@
+
 import { NextResponse } from "next/server";
 import { ObjectId } from "mongodb";
 import { getLoggedInUser } from "../../../../lib/auth";
@@ -39,21 +40,23 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      google: {
-        connected: Boolean(profile.googleId),
-        id: profile.googleId ?? null,
-        email: profile.googleEmail ?? null,
-      },
-      github: {
-        connected: Boolean(profile.githubId),
-        id: profile.githubId ?? null,
-        username: profile.githubUsername ?? null,
-        email: profile.githubEmail ?? null,
-      },
-      linkedin: {
-        connected: Boolean(profile.linkedinId),
-        id: profile.linkedinId ?? null,
-        name: profile.linkedinName ?? null,
+      accounts: {
+        google: {
+          connected: Boolean(profile.googleId),
+          id: profile.googleId ?? null,
+          email: profile.googleEmail ?? null,
+        },
+        github: {
+          connected: Boolean(profile.githubId),
+          id: profile.githubId ?? null,
+          username: profile.githubUsername ?? null,
+          email: profile.githubEmail ?? null,
+        },
+        linkedin: {
+          connected: Boolean(profile.linkedinId),
+          id: profile.linkedinId ?? null,
+          name: profile.linkedinName ?? null,
+        },
       },
     });
   } catch (error) {

@@ -24,6 +24,7 @@
 !.env.sample
 
 # OAuth credentials and private key files
+client_secret_*.json
 **/client_secret*.json
 **/*credentials*.json
 *.pem
